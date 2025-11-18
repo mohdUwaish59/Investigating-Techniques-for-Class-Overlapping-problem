@@ -39,14 +39,22 @@ python make_imbalanced.py
 - **Resampling Techniques**:
   - T1: RFCL (Random Forest Cleaning Rule - handles class overlap)
   - T2: SVDDWSMOTE (SVDD-based overlap handler - removes noisy instances)
+  - T3: EHSO (Evolutionary Hybrid Sampling in Overlapping scenarios)
   - T4: NBUS (Neighbourhood-Based Undersampling - 4 variants)
     - NB-Basic: Basic neighbourhood search
     - NB-Tomek: Modified Tomek link search
     - NB-Comm: Common nearest neighbours search
     - NB-Rec: Recursive search
-  - EHSO (Evolutionary Hybrid Sampling in Overlapping scenarios)
-  - Random Oversampling
-  - Random Undersampling
+  - T5: KMeans (Clustering-Based Undersampling - 4 variants)
+    - HKM: Hard K-Means clustering
+    - FCM: Fuzzy C-Means clustering
+    - RKM: Rough K-Means clustering
+    - FRKM: Fuzzy-Rough K-Means clustering
+  - T6: OSM (Overlap-Separating Model - comprehensive preprocessing)
+    - ROSE balancing, Tomek removal, RF feature selection
+    - Boxplot outlier removal, K-means overlap separation, SVM optimization
+  - T7: ROS (Random Oversampling - randomly duplicate minority samples)
+  - T8: RUS (Random Undersampling - randomly remove majority samples)
   - Easy to add more techniques
 
 - **Classifiers**:

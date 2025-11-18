@@ -10,7 +10,9 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent / 'src'))
 
 from data_loader import DataLoader
-from resampling_techniques import EHSO, RandomOverSampler, RandomUnderSampler, RFCL, SVDDWSMOTE, NBUS
+from resampling_techniques import (
+    EHSO, RandomOverSampler, RandomUnderSampler, RFCL, SVDDWSMOTE, NBUS, KMeansUndersampling, OSM
+)
 from visualization import ImbalancedDataVisualizer
 from model_evaluation import ModelEvaluator
 
@@ -209,18 +211,20 @@ if st.session_state.data_loaded:
     available_techniques = {
         "T1: RFCL": "Random Forest Cleaning Rule - handles class overlap",
         "T2: SVDDWSMOTE": "SVDD-based overlap handler - removes noisy instances",
+        "T3: EHSO": "Evolutionary Hybrid Sampling in Overlapping scenarios",
         "T4: NBUS": "Neighbourhood-Based Undersampling - 4 variants available",
-        "EHSO": "Evolutionary Hybrid Sampling in Overlapping scenarios",
-        "Random Oversampling": "Randomly duplicate minority samples",
-        "Random Undersampling": "Randomly remove majority samples",
+        "T5: KMeans": "KMeans-Based Undersampling - 4 clustering variants",
+        "T6: OSM": "Overlap-Separating Model - comprehensive preprocessing pipeline",
+        "T7: ROS": "Random Oversampling - randomly duplicate minority samples",
+        "T8: RUS": "Random Undersampling - randomly remove majority samples",
         "SMOTE": "Synthetic Minority Over-sampling Technique (Coming Soon)",
         "ADASYN": "Adaptive Synthetic Sampling (Coming Soon)",
     }
     
     selected_techniques = st.sidebar.multiselect(
         "Select techniques to apply:",
-        options=list(available_techniques.keys())[:6],  # Only available ones
-        default=["T1: RFCL", "T4: NBUS"],
+        options=list(available_techniques.keys())[:8],  # Only available ones
+        default=["T1: RFCL", "T6: OSM"],
         help="Select one or more resampling techniques"
     )
     
@@ -284,13 +288,109 @@ if st.session_state.data_loaded:
                 'verbose': nbus_verbose
             }
     
-    if "EHSO" in selected_techniques:
+    if "T5: KMeans" in selected_techniques:
+        with st.sidebar.expander("⚙️ KMeans Parameters"):
+            st.info("KMeans: Clustering-based undersampling with 4 variants")
+            
+            # Sub-technique selection
+            kmeans_methods = st.multiselect(
+                "Select KMeans variant(s):",
+                options=['HKM', 'FCM', 'RKM', 'FRKM'],
+                default=['HKM'],
+                help="HKM=Hard, FCM=Fuzzy, RKM=Rough, FRKM=Fuzzy-Rough",
+                key="kmeans_methods"
+            )
+            
+            # Common parameters
+            kmeans_k = st.slider("k (clusters)", 2, 10, 3, 1, key="kmeans_k",
+                                help="Number of clusters for majority class")
+            kmeans_max_iter = st.slider("max_iter", 50, 200, 100, 10, key="kmeans_max_iter")
+            kmeans_epsilon = st.number_input("epsilon", 0.00001, 0.001, 0.00001, 
+                                            format="%.5f", key="kmeans_epsilon")
+            
+            # FCM and FRKM specific
+            if 'FCM' in kmeans_methods or 'FRKM' in kmeans_methods:
+                kmeans_m = st.slider("m (fuzzifier)", 1.1, 5.0, 2.0, 0.1, key="kmeans_m",
+                                    help="Fuzzifier for FCM/FRKM")
+            else:
+                kmeans_m = 2.0
+            
+            # RKM and FRKM specific
+            if 'RKM' in kmeans_methods or 'FRKM' in kmeans_methods:
+                kmeans_w = st.slider("w (weight)", 0.5, 1.0, 0.95, 0.05, key="kmeans_w",
+                                    help="Weight for lower approximation")
+                kmeans_sigma = st.slider("sigma_threshold", 0.05, 0.5, 0.1, 0.05, key="kmeans_sigma",
+                                        help="Threshold for boundary region")
+            else:
+                kmeans_w = 0.95
+                kmeans_sigma = 0.1
+            
+            kmeans_verbose = st.checkbox("Show detailed progress", value=False, key="kmeans_verbose")
+            
+            technique_params["T5: KMeans"] = {
+                'methods': kmeans_methods,
+                'k': kmeans_k,
+                'm': kmeans_m,
+                'w': kmeans_w,
+                'sigma_threshold': kmeans_sigma,
+                'max_iter': kmeans_max_iter,
+                'epsilon': kmeans_epsilon,
+                'random_state': random_state,
+                'verbose': kmeans_verbose
+            }
+    
+    if "T6: OSM" in selected_techniques:
+        with st.sidebar.expander("⚙️ OSM Parameters"):
+            st.info("OSM: Comprehensive overlap-separating preprocessing pipeline")
+            
+            # Clustering parameters
+            osm_n_clusters = st.slider("Number of clusters (K-means)", 2, 10, 2, 1, key="osm_n_clusters",
+                                      help="Number of clusters for overlap separation")
+            
+            # Feature selection
+            osm_n_features = st.slider("Number of features to select", 2, 20, 6, 1, key="osm_n_features",
+                                      help="Features to keep after RF selection (None = auto)")
+            osm_n_features = None if osm_n_features == 6 else osm_n_features
+            
+            # Overlap threshold
+            osm_overlap_threshold = st.slider("Overlap threshold", 0.1, 0.9, 0.3, 0.05, key="osm_overlap_threshold",
+                                             help="Lower = more samples in overlap region")
+            
+            # Pipeline toggles
+            st.markdown("**Pipeline Steps:**")
+            col1, col2 = st.columns(2)
+            with col1:
+                osm_rose = st.checkbox("ROSE balancing", value=True, key="osm_rose",
+                                      help="SMOTE + Random Undersampling")
+                osm_tomek = st.checkbox("Tomek link removal", value=True, key="osm_tomek")
+                osm_feature_sel = st.checkbox("Feature selection", value=True, key="osm_feature_sel")
+            with col2:
+                osm_outlier = st.checkbox("Outlier removal", value=True, key="osm_outlier",
+                                         help="Boxplot IQR method")
+                osm_svm = st.checkbox("SVM optimization", value=True, key="osm_svm",
+                                     help="Remove misclassified samples")
+                osm_verbose = st.checkbox("Show detailed progress", value=False, key="osm_verbose")
+            
+            technique_params["T6: OSM"] = {
+                'n_clusters': osm_n_clusters,
+                'n_features': osm_n_features,
+                'overlap_threshold': osm_overlap_threshold,
+                'rose_sampling': osm_rose,
+                'tomek_removal': osm_tomek,
+                'feature_selection': osm_feature_sel,
+                'outlier_removal': osm_outlier,
+                'svm_optimization': osm_svm,
+                'random_state': random_state,
+                'verbose': osm_verbose
+            }
+    
+    if "T3: EHSO" in selected_techniques:
         with st.sidebar.expander("⚙️ EHSO Parameters"):
             ehso_k = st.slider("k_neighbors", 3, 15, 5, 1, key="ehso_k")
             ehso_alpha = st.slider("alpha", 0.0, 1.0, 0.1, 0.05, key="ehso_alpha")
             ehso_pop = st.slider("population_size", 5, 20, 10, 1, key="ehso_pop")
             ehso_iter = st.slider("max_iterations", 10, 50, 30, 5, key="ehso_iter")
-            technique_params["EHSO"] = {
+            technique_params["T3: EHSO"] = {
                 'k_neighbors': ehso_k,
                 'alpha': ehso_alpha,
                 'population_size': ehso_pop,
@@ -327,18 +427,41 @@ if st.session_state.data_loaded:
                         )
                         X_res, y_res = sampler.fit_resample(st.session_state.X, st.session_state.y)
                         resampled_data[f"T4: NBUS-{method}"] = (X_res, y_res)
-                    
-                elif technique == "EHSO":
-                    sampler = EHSO(**technique_params["EHSO"])
+                
+                elif technique == "T5: KMeans":
+                    # Apply each selected KMeans variant
+                    params = technique_params["T5: KMeans"]
+                    for method in params['methods']:
+                        sampler = KMeansUndersampling(
+                            method=method,
+                            k=params['k'],
+                            m=params['m'],
+                            w=params['w'],
+                            sigma_threshold=params['sigma_threshold'],
+                            max_iter=params['max_iter'],
+                            epsilon=params['epsilon'],
+                            random_state=params['random_state'],
+                            verbose=params['verbose']
+                        )
+                        X_res, y_res = sampler.fit_resample(st.session_state.X, st.session_state.y)
+                        resampled_data[f"T5: KMeans-{method}"] = (X_res, y_res)
+                
+                elif technique == "T6: OSM":
+                    sampler = OSM(**technique_params["T6: OSM"])
                     X_res, y_res = sampler.fit_resample(st.session_state.X, st.session_state.y)
                     resampled_data[technique] = (X_res, y_res)
                     
-                elif technique == "Random Oversampling":
+                elif technique == "T3: EHSO":
+                    sampler = EHSO(**technique_params["T3: EHSO"])
+                    X_res, y_res = sampler.fit_resample(st.session_state.X, st.session_state.y)
+                    resampled_data[technique] = (X_res, y_res)
+                    
+                elif technique == "T7: ROS":
                     sampler = RandomOverSampler(random_state=random_state)
                     X_res, y_res = sampler.fit_resample(st.session_state.X, st.session_state.y)
                     resampled_data[technique] = (X_res, y_res)
                     
-                elif technique == "Random Undersampling":
+                elif technique == "T8: RUS":
                     sampler = RandomUnderSampler(random_state=random_state)
                     X_res, y_res = sampler.fit_resample(st.session_state.X, st.session_state.y)
                     resampled_data[technique] = (X_res, y_res)

@@ -17,6 +17,12 @@ from techniques import (
     NBTomek,
     NBComm,
     NBRec,
+    KMeansUndersampling,
+    HKMUndersampling,
+    FCMUndersampling,
+    RKMUndersampling,
+    FRKMUndersampling,
+    OSM,
     RandomOverSampler,
     RandomUnderSampler
 )
@@ -32,6 +38,12 @@ __all__ = [
     'NBTomek',
     'NBComm',
     'NBRec',
+    'KMeansUndersampling',
+    'HKMUndersampling',
+    'FCMUndersampling',
+    'RKMUndersampling',
+    'FRKMUndersampling',
+    'OSM',
     'RandomOverSampler',
     'RandomUnderSampler'
 ]

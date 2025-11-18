@@ -1,6 +1,6 @@
 import pandas as pd
 from main_pipeline import ImbalancedLearningPipeline
-from resampling_techniques import EHSO, RandomOverSampler, RandomUnderSampler, RFCL, SVDDWSMOTE, NBUS
+from resampling_techniques import EHSO, RandomOverSampler, RandomUnderSampler, RFCL, SVDDWSMOTE, NBUS, OSM
 
 # Create or load your DataFrame
 df = pd.read_csv('data/data_imbalanced.csv')
@@ -29,11 +29,11 @@ techniques = {
         n_sigma_candidates=5,
         verbose=True
     ),
+    'T3: EHSO': EHSO(k_neighbors=5, alpha=0.1, verbose=False),
     'T4: NBUS-Basic': NBUS(method='NB-Basic', k=None, random_state=42, verbose=True),
-    'T4: NBUS-Tomek': NBUS(method='NB-Tomek', k=None, random_state=42, verbose=True),
-    'EHSO': EHSO(k_neighbors=5, alpha=0.1, verbose=False),
-    'Random Oversampling': RandomOverSampler(random_state=42),
-    'Random Undersampling': RandomUnderSampler(random_state=42)
+    'T6: OSM': OSM(n_clusters=2, verbose=True),
+    'T7: ROS': RandomOverSampler(random_state=42),
+    'T8: RUS': RandomUnderSampler(random_state=42)
 }
 pipeline.apply_resampling_techniques(techniques)
 
