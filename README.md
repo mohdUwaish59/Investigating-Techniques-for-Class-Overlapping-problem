@@ -1,4 +1,5 @@
-# ⚖️ Imbalanced Learning Toolkit
+# Investigating Techniques for Class Overlapping problem
+
 
 A comprehensive, modular toolkit for experimenting with imbalanced datasets. Complete control over data loading, resampling techniques, model evaluation, and visualization.
 
