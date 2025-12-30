@@ -1,7 +1,6 @@
-# Investigating Techniques for Class Overlapping problem
+# Investigating Techniques for Class Overlapping Problem
 
-
-A comprehensive, modular toolkit for experimenting with imbalanced datasets. Complete control over data loading, resampling techniques, model evaluation, and visualization.
+A comprehensive, modular toolkit for experimenting with imbalanced datasets and class overlap analysis. Complete control over data loading, resampling techniques, model evaluation, and visualization.
 
 ## 🚀 Quick Start
 
@@ -24,7 +23,7 @@ streamlit run app.py
 python src/run.py
 
 # Create imbalanced dataset
-python make_imbalanced.py
+python misc/make_imbalanced.py
 ```
 
 ## 📋 Features
@@ -38,7 +37,12 @@ python make_imbalanced.py
   
 - **Resampling Techniques**:
   - T1: RFCL (Random Forest Cleaning Rule - handles class overlap)
+  - T1.1: URNS (Recursive Neighbourhood Search - overlap-based undersampling)
+  - T1.3: NUS (Neighbourhood Under-Sampling - colonial neighbours method)
+  - T1.4: DeviOCSVM (Devi et al. One-Class SVM - comprehensive overlap handling with Tomek links)
+  - T1.5: FCMBoostOBU (Fuzzy C-Means Boosted Overlap-Based Undersampling - BLSMOTE1 + FCM clustering)
   - T2: SVDDWSMOTE (SVDD-based overlap handler - removes noisy instances)
+  - T2.1: ODBOT (Outlier Detection-Based Oversampling - clustering-based synthetic generation)
   - T3: EHSO (Evolutionary Hybrid Sampling in Overlapping scenarios)
   - T4: NBUS (Neighbourhood-Based Undersampling - 4 variants)
     - NB-Basic: Basic neighbourhood search
@@ -55,7 +59,16 @@ python make_imbalanced.py
     - Boxplot outlier removal, K-means overlap separation, SVM optimization
   - T7: ROS (Random Oversampling - randomly duplicate minority samples)
   - T8: RUS (Random Undersampling - randomly remove majority samples)
-  - Easy to add more techniques
+
+- **Complexity Analysis** (Global Feature):
+  - **30+ complexity measures** using local implementation (copied from pycol)
+  - **N3**: Error Rate of 1-NN Classifier (instance-level overlap)
+  - **T1**: Fraction of Hyperspheres (structural overlap)
+  - **N1**: Fraction of Borderline Points
+  - **F1**: Maximum Fisher's Discriminant Ratio
+  - Before/after comparison for all techniques
+  - Visual comparison charts
+  - Automatic recommendations based on complexity
 
 - **Classifiers**:
   - Decision Tree
@@ -79,11 +92,12 @@ python make_imbalanced.py
 - Confusion matrices
 - Performance metrics comparison
 - Overlap detection visualization
+- Complexity analysis charts
 
 ### ⚙️ Customizable Parameters
 
 - **Data Generation**: samples, features, imbalance ratio, overlap degree
-- **EHSO**: k_neighbors, alpha, population_size, max_iterations
+- **All Techniques**: Comprehensive parameter controls for each technique
 - **Classifiers**: All standard hyperparameters
 - **Evaluation**: test size, random state, cross-validation
 
@@ -92,20 +106,39 @@ python make_imbalanced.py
 ```
 .
 ├── app.py                      # Streamlit UI (main interface)
-├── make_imbalanced.py          # Script to create imbalanced datasets
 ├── requirements.txt            # Python dependencies
+├── README.md                   # This file
+├── PROJECT_DETAILED_REPORT.md  # Comprehensive project documentation
+├── COMPLEXITY_ANALYSIS_FEATURE.md  # Complexity analysis documentation
 ├── data/
 │   ├── data.csv               # Original dataset
-│   └── data_imbalanced.csv    # Imbalanced version
+│   ├── data_imbalanced.csv    # Imbalanced version
+│   ├── contraceptive+method+choice/  # Sample dataset
+│   └── working/
+│       └── contraceptive_method_choice.csv
+├── misc/
+│   ├── data.ipynb            # Data exploration notebook
+│   ├── make_imbalanced.py    # Script to create imbalanced datasets
+│   ├── reduce_dataset.py     # Dataset reduction utilities
+│   ├── QUICK_START.md        # Quick start guide
+│   └── test_*.py             # Individual technique tests
 └── src/
     ├── techniques/            # 🆕 Modular resampling techniques
     │   ├── __init__.py       # Package initialization
     │   ├── base_sampler.py   # Abstract base class
-    │   ├── ehso.py           # EHSO technique
-    │   ├── rfcl.py           # RFCL technique
-    │   ├── random_oversampler.py
-    │   ├── random_undersampler.py
+    │   ├── rfcl.py           # T1: RFCL technique
+    │   ├── urns.py           # T1.1: URNS technique
+    │   ├── nus.py            # T1.3: NUS technique
+    │   ├── svddwsmote.py     # T2: SVDDWSMOTE technique
+    │   ├── ehso.py           # T3: EHSO technique
+    │   ├── nbus.py           # T4: NBUS variants
+    │   ├── kmeans_undersampling.py  # T5: KMeans variants
+    │   ├���─ osm.py            # T6: OSM technique
+    │   ├── random_oversampler.py   # T7: ROS
+    │   ├── random_undersampler.py  # T8: RUS
     │   └── README.md         # Techniques documentation
+    ├── complexity.py          # Local complexity measures implementation
+    ├── complexity_measures.py # Complexity analysis interface
     ├── data_loader.py         # Data loading utilities
     ├── resampling_techniques.py  # Imports from techniques/
     ├── visualization.py       # Visualization tools
@@ -124,8 +157,9 @@ python make_imbalanced.py
    - Choose features
 
 2. **Apply Resampling**:
-   - Select techniques (EHSO, ROS, RUS)
-   - Configure parameters
+   - Select techniques (multiple options available)
+   - Configure parameters for each technique
+   - Enable complexity analysis
    - Click "Apply Resampling"
 
 3. **Evaluate**:
@@ -134,15 +168,16 @@ python make_imbalanced.py
    - Click "Evaluate Models"
 
 4. **Analyze Results**:
-   - View metrics table
-   - Compare visualizations
+   - View metrics table (focus on G-mean)
+   - Compare complexity improvements
+   - View visualizations
    - Download results
 
 ### Using Python Scripts
 
 ```python
-from main_pipeline import ImbalancedLearningPipeline
-from resampling_techniques import EHSO
+from src.main_pipeline import ImbalancedLearningPipeline
+from src.resampling_techniques import RFCL, URNS, OSM
 
 # Initialize pipeline
 pipeline = ImbalancedLearningPipeline(verbose=True)
@@ -156,49 +191,34 @@ pipeline.load_data(
 
 # Apply techniques
 techniques = {
-    'EHSO': EHSO(k_neighbors=5, alpha=0.1)
+    'RFCL': RFCL(random_state=42),
+    'URNS': URNS(k='adaptive', rounds=2),
+    'OSM': OSM()
 }
 pipeline.apply_resampling_techniques(techniques)
 
 # Evaluate
-results = pipeline.evaluate_techniques(classifier_name='decision_tree')
+results = pipeline.evaluate_techniques(classifier_name='random_forest')
 
 # Get best technique
 best = pipeline.get_best_technique(metric='g_mean')
 ```
 
-## 🔧 Adding New Techniques
+## 🔧 Complexity Analysis
 
-To add a new resampling technique:
+The toolkit includes comprehensive complexity analysis using **30+ measures**:
 
-1. Create a class in `src/resampling_techniques.py`:
+### Key Measures
+- **N3**: Error Rate of 1-NN Classifier (instance overlap)
+- **T1**: Fraction of Hyperspheres (structural overlap)  
+- **N1**: Fraction of Borderline Points
+- **F1**: Maximum Fisher's Discriminant Ratio
 
-```python
-class YourNewTechnique(BaseSampler):
-    def __init__(self, param1=default1, param2=default2):
-        self.param1 = param1
-        self.param2 = param2
-    
-    def fit_resample(self, X, y):
-        # Your implementation
-        return X_resampled, y_resampled
-```
-
-2. Add it to the UI in `app.py`:
-
-```python
-available_techniques = {
-    "Your New Technique": "Description",
-    # ... existing techniques
-}
-```
-
-3. Add instantiation logic:
-
-```python
-elif technique == "Your New Technique":
-    sampler = YourNewTechnique(param1=value1, param2=value2)
-```
+### Automatic Recommendations
+- **High N3** → Instance-based techniques (NBUS, RFCL, URNS)
+- **High T1** → Clustering-based techniques (KMeans, OSM)
+- **High N1** → Borderline-focused techniques
+- **Low F1** → Feature selection/transformation needed
 
 ## 📊 Supported Metrics
 
@@ -208,16 +228,15 @@ elif technique == "Your New Technique":
 - **Recall**: True positive rate
 - **F1-Score**: Harmonic mean of precision and recall
 - **Specificity**: True negative rate
-- **G-mean**: Geometric mean (ideal for imbalanced data)
+- **G-mean**: Geometric mean (ideal for imbalanced data) ⭐
 - **AUC-ROC**: Area under ROC curve
 
 ## 🎓 References
 
-**T1: RFCL** implementation based on:
-> Zhang et al. (2021). "RFCL: A new under-sampling method of reducing the degree of imbalance and overlap"
+**Complexity Measures** based on:
+> Ho, T. K., & Basu, M. (2002). "Complexity measures of supervised classification problems." IEEE Transactions on Pattern Analysis and Machine Intelligence.
 
-**EHSO** implementation based on:
-> Zhu, T., Lin, Y., & Liu, Y. (2020). Synthetic minority oversampling technique for multiclass imbalance problems. Pattern Recognition, 72, 327-340.
+**Individual Techniques** - See PROJECT_DETAILED_REPORT.md for complete references.
 
 ## 📝 License
 
@@ -225,7 +244,7 @@ MIT License
 
 ## 🤝 Contributing
 
-Contributions are welcome! Feel free to:
+Contributions are welcome! The modular architecture makes it easy to:
 - Add new resampling techniques
 - Improve visualizations
 - Add more classifiers
@@ -233,8 +252,15 @@ Contributions are welcome! Feel free to:
 
 ## 💡 Tips
 
-- Start with IR > 5 for meaningful comparisons
+- Start with IR > 3 for meaningful comparisons
 - Use G-mean for imbalanced data evaluation
-- Try multiple techniques and compare
-- Adjust EHSO alpha parameter (0.1 is optimal for most cases)
+- Enable complexity analysis for technique selection guidance
+- Try multiple techniques and compare results
 - Use cross-validation for robust results
+
+## 📚 Documentation
+
+- **PROJECT_DETAILED_REPORT.md**: Comprehensive 50+ page documentation
+- **COMPLEXITY_ANALYSIS_FEATURE.md**: Detailed complexity analysis guide
+- **misc/QUICK_START.md**: Quick start guide
+- **src/techniques/README.md**: Techniques documentation

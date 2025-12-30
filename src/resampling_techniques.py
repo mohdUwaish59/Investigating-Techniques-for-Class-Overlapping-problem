@@ -23,8 +23,13 @@ from techniques import (
     RKMUndersampling,
     FRKMUndersampling,
     OSM,
+    URNS,
+    NUS,
     RandomOverSampler,
-    RandomUnderSampler
+    RandomUnderSampler,
+    DeviOCSVM,
+    FCMBoostOBU,
+    ODBOT
 )
 
 # For backward compatibility
@@ -44,6 +49,11 @@ __all__ = [
     'RKMUndersampling',
     'FRKMUndersampling',
     'OSM',
+    'URNS',
+    'NUS',
     'RandomOverSampler',
-    'RandomUnderSampler'
+    'RandomUnderSampler',
+    'DeviOCSVM',
+    'FCMBoostOBU',
+    'ODBOT'
 ]

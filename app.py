@@ -11,10 +11,11 @@ sys.path.append(str(Path(__file__).parent / 'src'))
 
 from data_loader import DataLoader
 from resampling_techniques import (
-    EHSO, RandomOverSampler, RandomUnderSampler, RFCL, SVDDWSMOTE, NBUS, KMeansUndersampling, OSM
+    EHSO, RandomOverSampler, RandomUnderSampler, RFCL, SVDDWSMOTE, NBUS, KMeansUndersampling, OSM, URNS, NUS, DeviOCSVM, FCMBoostOBU, ODBOT
 )
 from visualization import ImbalancedDataVisualizer
 from model_evaluation import ModelEvaluator
+from complexity_measures import ComplexityMeasures, compare_pre_post_overlap
 
 # Page config
 st.set_page_config(
@@ -207,10 +208,31 @@ if st.session_state.data_loaded:
     
     st.sidebar.markdown("### 🔄 Resampling Methods")
     
+    # Global Complexity Analysis Toggle
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 📊 Complexity Analysis")
+    enable_complexity = st.sidebar.checkbox(
+        "Calculate N3 & T1 measures",
+        value=True,
+        help="Measure class overlap before/after resampling using N3 and T1 complexity measures"
+    )
+    if enable_complexity:
+        complexity_by_class = st.sidebar.checkbox(
+            "Show per-class breakdown",
+            value=True,
+            help="Calculate N3 and T1 separately for each class"
+        )
+    st.sidebar.markdown("---")
+    
     # Technique selection
     available_techniques = {
         "T1: RFCL": "Random Forest Cleaning Rule - handles class overlap",
+        "T1.1: URNS": "Recursive Neighbourhood Search - overlap-based undersampling",
+        "T1.3: NUS": "Neighbourhood Under-Sampling - colonial neighbours method",
+        "T1.4: DeviOCSVM": "Devi et al. One-Class SVM - comprehensive overlap handling with Tomek links",
+        "T1.5: FCMBoostOBU": "Fuzzy C-Means Boosted Overlap-Based Undersampling - BLSMOTE1 + FCM clustering",
         "T2: SVDDWSMOTE": "SVDD-based overlap handler - removes noisy instances",
+        "T2.1: ODBOT": "Outlier Detection-Based Oversampling - clustering-based synthetic generation",
         "T3: EHSO": "Evolutionary Hybrid Sampling in Overlapping scenarios",
         "T4: NBUS": "Neighbourhood-Based Undersampling - 4 variants available",
         "T5: KMeans": "KMeans-Based Undersampling - 4 clustering variants",
@@ -223,8 +245,8 @@ if st.session_state.data_loaded:
     
     selected_techniques = st.sidebar.multiselect(
         "Select techniques to apply:",
-        options=list(available_techniques.keys())[:8],  # Only available ones
-        default=["T1: RFCL", "T6: OSM"],
+        options=list(available_techniques.keys())[:13],  # Only available ones
+        default=["T1: RFCL", "T1.3: NUS"],
         help="Select one or more resampling techniques"
     )
     
@@ -235,9 +257,123 @@ if st.session_state.data_loaded:
         with st.sidebar.expander("⚙️ RFCL Parameters"):
             st.info("RFCL uses Random Forest to identify and remove overlapping majority samples")
             rfcl_verbose = st.checkbox("Show detailed progress", value=False, key="rfcl_verbose")
+            random_state = 42
             technique_params["T1: RFCL"] = {
                 'random_state': random_state,
                 'verbose': rfcl_verbose
+            }
+    
+    if "T1.1: URNS" in selected_techniques:
+        with st.sidebar.expander("⚙️ URNS Parameters"):
+            st.info("URNS: Recursive neighbourhood search to remove overlapping majority samples")
+            
+            # K parameter
+            urns_k_mode = st.radio("k selection mode", ["Adaptive", "Manual"], key="urns_k_mode",
+                                  help="Adaptive: k = sqrt(N) + sqrt(IR)")
+            if urns_k_mode == "Manual":
+                urns_k = st.slider("k (neighbors)", 3, 50, 10, 1, key="urns_k")
+            else:
+                urns_k = 'adaptive'
+            
+            # Min frequency
+            urns_min_freq = st.slider("Minimum frequency", 1, 5, 2, 1, key="urns_min_freq",
+                                     help="Min times an instance must appear to be removed")
+            
+            # Rounds
+            urns_rounds = st.slider("Recursive rounds", 1, 3, 2, 1, key="urns_rounds",
+                                   help="Number of recursive neighbourhood search rounds")
+            
+            urns_verbose = st.checkbox("Show detailed progress", value=False, key="urns_verbose")
+            
+            technique_params["T1.1: URNS"] = {
+                'k': urns_k,
+                'min_frequency': urns_min_freq,
+                'rounds': urns_rounds,
+                'random_state': random_state,
+                'verbose': urns_verbose
+            }
+    
+    if "T1.3: NUS" in selected_techniques:
+        with st.sidebar.expander("⚙️ NUS Parameters"):
+            st.info("NUS: Colonial neighbours method for overlap-based undersampling")
+            
+            # K parameter
+            nus_k_mode = st.radio("k selection mode", ["Auto", "Manual"], key="nus_k_mode",
+                                 help="Auto: k = min(sqrt(n_majority), 50)")
+            if nus_k_mode == "Manual":
+                nus_k = st.slider("k (neighbors)", 3, 50, 10, 1, key="nus_k")
+            else:
+                nus_k = None
+            
+            # Distance threshold
+            nus_dist_mode = st.radio("Distance threshold", ["Median", "Mean", "Custom"], key="nus_dist_mode",
+                                    help="Threshold for nominating neighbours")
+            if nus_dist_mode == "Custom":
+                nus_dist = st.number_input("Custom distance", 0.01, 10.0, 1.0, 0.1, key="nus_dist")
+            else:
+                nus_dist = nus_dist_mode.lower()
+            
+            # Min membership
+            nus_min_mem = st.slider("Minimum membership", 1, 5, 2, 1, key="nus_min_mem",
+                                   help="Min memberships required for elimination")
+            
+            nus_verbose = st.checkbox("Show detailed progress", value=False, key="nus_verbose")
+            
+            technique_params["T1.3: NUS"] = {
+                'k_neighbors': nus_k,
+                'distance_threshold': nus_dist,
+                'min_membership': nus_min_mem,
+                'random_state': random_state,
+                'verbose': nus_verbose
+            }
+    
+    if "T1.4: DeviOCSVM" in selected_techniques:
+        with st.sidebar.expander("⚙️ DeviOCSVM Parameters"):
+            st.info("DeviOCSVM: Comprehensive One-Class SVM method with Tomek links (Devi et al. 2019)")
+            devi_nu = st.slider("nu", 0.1, 0.9, 0.5, 0.1, key="devi_nu",
+                               help="Parameter for one-class SVM (ϑ in paper, tested with 0.3, 0.5, 0.7)")
+            devi_k1 = st.slider("K1", 1, 5, 1, 1, key="devi_k1",
+                               help="K-NN of minority instance (set to 1 in paper)")
+            devi_k2 = st.slider("K2", 3, 10, 5, 1, key="devi_k2",
+                               help="K-NN of majority instances (set to 5 in paper)")
+            devi_k3 = st.slider("K3", 1, 5, 1, 1, key="devi_k3",
+                               help="K-NN of overlapped majority instance (set to 1 in paper)")
+            devi_kernel = st.selectbox("kernel", ["rbf", "linear", "poly", "sigmoid"], 
+                                      index=0, key="devi_kernel")
+            devi_gamma = st.selectbox("gamma", ["scale", "auto"], index=0, key="devi_gamma")
+            devi_verbose = st.checkbox("Show detailed progress", value=False, key="devi_verbose")
+            
+            technique_params["T1.4: DeviOCSVM"] = {
+                'nu': devi_nu,
+                'K1': devi_k1,
+                'K2': devi_k2,
+                'K3': devi_k3,
+                'kernel': devi_kernel,
+                'gamma': devi_gamma,
+                'verbose': devi_verbose
+            }
+    
+    if "T1.5: FCMBoostOBU" in selected_techniques:
+        with st.sidebar.expander("⚙️ FCMBoostOBU Parameters"):
+            st.info("FCMBoostOBU: Fuzzy C-Means Boosted Overlap-Based Undersampling (Vuttipittayamongkol & Elyan 2020)")
+            fcm_k = st.slider("k", 3, 15, 5, 1, key="fcm_k",
+                             help="Number of neighbors for BLSMOTE1")
+            fcm_m = st.slider("m", 1.1, 5.0, 2.0, 0.1, key="fcm_m",
+                             help="Fuzziness parameter for FCM (1 ≤ m ≤ ∞)")
+            fcm_max_iter = st.slider("max_iter", 100, 2000, 1000, 100, key="fcm_max_iter",
+                                    help="Maximum iterations for FCM")
+            fcm_error = st.selectbox("error", [1e-3, 1e-4, 1e-5, 1e-6], index=2, key="fcm_error",
+                                    help="Convergence criterion for FCM")
+            fcm_random_state = st.number_input("random_state", value=42, key="fcm_random_state")
+            fcm_verbose = st.checkbox("Show detailed progress", value=False, key="fcm_verbose")
+            
+            technique_params["T1.5: FCMBoostOBU"] = {
+                'k': fcm_k,
+                'm': fcm_m,
+                'max_iter': fcm_max_iter,
+                'error': fcm_error,
+                'random_state': int(fcm_random_state),
+                'verbose': fcm_verbose
             }
     
     if "T2: SVDDWSMOTE" in selected_techniques:
@@ -281,6 +417,7 @@ if st.session_state.data_loaded:
             
             nbus_verbose = st.checkbox("Show detailed progress", value=False, key="nbus_verbose")
             
+            random_state = 42
             technique_params["T4: NBUS"] = {
                 'methods': nbus_methods,
                 'k': nbus_k,
@@ -399,6 +536,24 @@ if st.session_state.data_loaded:
                 'random_state': random_state
             }
     
+    if "T2.1: ODBOT" in selected_techniques:
+        with st.sidebar.expander("⚙️ ODBOT Parameters"):
+            st.info("ODBOT: Outlier Detection-Based Oversampling Technique (Ibrahim 2021)")
+            odbot_k = st.slider("k", 2, 10, 2, 1, key="odbot_k",
+                               help="Number of clusters (must be > 1 as per paper)")
+            odbot_percentage = st.selectbox("percentage", [None, 100, 200, 300, 400, 500], 
+                                           index=0, key="odbot_percentage",
+                                           help="Percentage for oversampling. None = automatic calculation")
+            odbot_random_state = st.number_input("random_state", value=42, key="odbot_random_state")
+            odbot_verbose = st.checkbox("Show detailed progress", value=False, key="odbot_verbose")
+            
+            technique_params["T2.1: ODBOT"] = {
+                'k': odbot_k,
+                'percentage': odbot_percentage,
+                'random_state': int(odbot_random_state),
+                'verbose': odbot_verbose
+            }
+    
     # Apply resampling button
     if st.sidebar.button("🚀 Apply Resampling", type="primary"):
         with st.spinner("Applying resampling techniques..."):
@@ -407,6 +562,26 @@ if st.session_state.data_loaded:
             for technique in selected_techniques:
                 if technique == "T1: RFCL":
                     sampler = RFCL(**technique_params["T1: RFCL"])
+                    X_res, y_res = sampler.fit_resample(st.session_state.X, st.session_state.y)
+                    resampled_data[technique] = (X_res, y_res)
+                
+                elif technique == "T1.1: URNS":
+                    sampler = URNS(**technique_params["T1.1: URNS"])
+                    X_res, y_res = sampler.fit_resample(st.session_state.X, st.session_state.y)
+                    resampled_data[technique] = (X_res, y_res)
+                
+                elif technique == "T1.3: NUS":
+                    sampler = NUS(**technique_params["T1.3: NUS"])
+                    X_res, y_res = sampler.fit_resample(st.session_state.X, st.session_state.y)
+                    resampled_data[technique] = (X_res, y_res)
+                    
+                elif technique == "T1.4: DeviOCSVM":
+                    sampler = DeviOCSVM(**technique_params["T1.4: DeviOCSVM"])
+                    X_res, y_res = sampler.fit_resample(st.session_state.X, st.session_state.y)
+                    resampled_data[technique] = (X_res, y_res)
+                    
+                elif technique == "T1.5: FCMBoostOBU":
+                    sampler = FCMBoostOBU(**technique_params["T1.5: FCMBoostOBU"])
                     X_res, y_res = sampler.fit_resample(st.session_state.X, st.session_state.y)
                     resampled_data[technique] = (X_res, y_res)
                     
@@ -456,6 +631,11 @@ if st.session_state.data_loaded:
                     X_res, y_res = sampler.fit_resample(st.session_state.X, st.session_state.y)
                     resampled_data[technique] = (X_res, y_res)
                     
+                elif technique == "T2.1: ODBOT":
+                    sampler = ODBOT(**technique_params["T2.1: ODBOT"])
+                    X_res, y_res = sampler.fit_resample(st.session_state.X, st.session_state.y)
+                    resampled_data[technique] = (X_res, y_res)
+                    
                 elif technique == "T7: ROS":
                     sampler = RandomOverSampler(random_state=random_state)
                     X_res, y_res = sampler.fit_resample(st.session_state.X, st.session_state.y)
@@ -471,6 +651,41 @@ if st.session_state.data_loaded:
             
             st.session_state.resampled_data = resampled_data
             st.session_state.resampling_done = True
+            
+            # Calculate complexity measures if enabled
+            if enable_complexity:
+                with st.spinner("Calculating complexity measures using local complexity.py..."):
+                    complexity_results = {}
+                    
+                    # Calculate for original data
+                    try:
+                        cm_original = ComplexityMeasures(st.session_state.X, st.session_state.y)
+                        complexity_results['Original'] = cm_original.analyze_overlap(include_all=False)
+                    except Exception as e:
+                        st.warning(f"Could not calculate complexity for original data: {e}")
+                        complexity_results['Original'] = {'n3': {'overall': 0.0}, 't1': {'normalized': 0.0}}
+                    
+                    # Calculate for each resampled dataset
+                    for name, (X_res, y_res) in resampled_data.items():
+                        try:
+                            comparison = compare_pre_post_overlap(
+                                st.session_state.X, st.session_state.y,
+                                X_res, y_res,
+                                include_all=False
+                            )
+                            complexity_results[name] = comparison
+                        except Exception as e:
+                            st.warning(f"Could not calculate complexity for {name}: {e}")
+                            complexity_results[name] = {
+                                'post_processing': {'n3': {'overall': 0.0}, 't1': {'normalized': 0.0}},
+                                'improvements': {'n3': {'absolute': 0.0}, 't1': {'absolute': 0.0}}
+                            }
+                    
+                    st.session_state.complexity_results = complexity_results
+                    st.session_state.complexity_enabled = True
+            else:
+                st.session_state.complexity_enabled = False
+            
             st.success(f"✅ Applied {len(selected_techniques)} resampling technique(s)!")
     
     # Display resampling results
@@ -532,6 +747,174 @@ if st.session_state.data_loaded:
                 
                 st.pyplot(fig)
                 plt.close()
+        
+        # Complexity Analysis Results
+        if st.session_state.get('complexity_enabled', False):
+            st.markdown("#### 📊 Complexity Analysis (N3 & T1 Measures)")
+            
+            with st.expander("ℹ️ About N3 and T1 Measures", expanded=False):
+                st.markdown("""
+                **Complexity Measures using local complexity.py implementation**
+                
+                **N3 (Error Rate of 1-NN Classifier)**
+                - Measures instance-level overlap (local characteristics)
+                - Uses Leave-One-Out cross-validation with 1-NN
+                - Lower values = less overlap
+                - Range: 0 (no overlap) to 1 (complete overlap)
+                
+                **T1 (Fraction of Hyperspheres)**
+                - Measures structural overlap (global characteristics)
+                - Counts hyperspheres needed to cover data
+                - Lower values = less overlap
+                - Normalized by number of samples
+                
+                **Additional Measures Available:**
+                - N1: Fraction of Borderline Points
+                - F1: Maximum Fisher's Discriminant Ratio
+                - N2: Ratio of Intra/Extra Class NN Distance
+                - SI: Separability Index
+                
+                **Interpretation:**
+                - High N3: Instance overlap - consider NBUS, RFCL, OSM
+                - High T1: Structural overlap - consider KMeans, OSM
+                - High N1: Many borderline points - consider borderline techniques
+                """)
+            
+            # Create complexity comparison table
+            complexity_comparison = []
+            
+            # Original data
+            orig_results = st.session_state.complexity_results['Original']
+            n3_orig = orig_results.get('n3', {}).get('overall', 0.0)
+            t1_orig = orig_results.get('t1', {}).get('normalized', 0.0)
+            complexity_level = orig_results.get('interpretation', {}).get('overall_complexity', 'unknown').upper()
+            
+            complexity_comparison.append({
+                'Technique': 'Original',
+                'N3 (Instance Overlap)': f"{n3_orig:.4f}",
+                'T1 (Structural Overlap)': f"{t1_orig:.4f}",
+                'Complexity Level': complexity_level
+            })
+            
+            # Resampled data
+            for name in st.session_state.resampled_data.keys():
+                if name in st.session_state.complexity_results:
+                    comp_results = st.session_state.complexity_results[name]
+                    
+                    # Handle both direct results and comparison results
+                    if 'post_processing' in comp_results:
+                        post_results = comp_results['post_processing']
+                        n3_post = post_results.get('n3', {}).get('overall', 0.0)
+                        t1_post = post_results.get('t1', {}).get('normalized', 0.0)
+                        n3_improvement = comp_results.get('improvements', {}).get('n3', {}).get('absolute', 0.0)
+                        t1_improvement = comp_results.get('improvements', {}).get('t1', {}).get('absolute', 0.0)
+                        complexity_level = post_results.get('interpretation', {}).get('overall_complexity', 'unknown').upper()
+                        
+                        complexity_comparison.append({
+                            'Technique': name,
+                            'N3 (Instance Overlap)': f"{n3_post:.4f} ({n3_improvement:+.4f})",
+                            'T1 (Structural Overlap)': f"{t1_post:.4f} ({t1_improvement:+.4f})",
+                            'Complexity Level': complexity_level
+                        })
+                    else:
+                        # Direct results
+                        n3_direct = comp_results.get('n3', {}).get('overall', 0.0)
+                        t1_direct = comp_results.get('t1', {}).get('normalized', 0.0)
+                        complexity_level = comp_results.get('interpretation', {}).get('overall_complexity', 'unknown').upper()
+                        
+                        complexity_comparison.append({
+                            'Technique': name,
+                            'N3 (Instance Overlap)': f"{n3_direct:.4f}",
+                            'T1 (Structural Overlap)': f"{t1_direct:.4f}",
+                            'Complexity Level': complexity_level
+                        })
+            
+            st.dataframe(pd.DataFrame(complexity_comparison), use_container_width=True)
+            
+            # Visualize complexity improvements
+            with st.expander("📈 Visualize Complexity Improvements"):
+                # Prepare data for plotting
+                techniques = ['Original'] + list(st.session_state.resampled_data.keys())
+                n3_values = [n3_orig]
+                t1_values = [t1_orig]
+                
+                for name in st.session_state.resampled_data.keys():
+                    if name in st.session_state.complexity_results:
+                        comp_results = st.session_state.complexity_results[name]
+                        if 'post_processing' in comp_results:
+                            n3_values.append(comp_results['post_processing'].get('n3', {}).get('overall', 0.0))
+                            t1_values.append(comp_results['post_processing'].get('t1', {}).get('normalized', 0.0))
+                        else:
+                            n3_values.append(comp_results.get('n3', {}).get('overall', 0.0))
+                            t1_values.append(comp_results.get('t1', {}).get('normalized', 0.0))
+                
+                # Create comparison plots
+                fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+                
+                # N3 comparison
+                colors = ['#e74c3c'] + ['#2ecc71'] * (len(techniques) - 1)
+                bars1 = ax1.barh(techniques, n3_values, color=colors, alpha=0.7)
+                ax1.set_xlabel('N3 Score (Lower is Better)', fontsize=12)
+                ax1.set_title('N3: Instance Overlap Comparison', fontsize=14, fontweight='bold')
+                ax1.axvline(x=0.2, color='orange', linestyle='--', alpha=0.5, label='High Overlap Threshold')
+                ax1.legend()
+                ax1.grid(True, alpha=0.3, axis='x')
+                
+                # Add value labels
+                for i, (bar, val) in enumerate(zip(bars1, n3_values)):
+                    ax1.text(val + 0.01, bar.get_y() + bar.get_height()/2, 
+                            f'{val:.4f}', va='center', fontsize=9)
+                
+                # T1 comparison
+                bars2 = ax2.barh(techniques, t1_values, color=colors, alpha=0.7)
+                ax2.set_xlabel('T1 Score (Lower is Better)', fontsize=12)
+                ax2.set_title('T1: Structural Overlap Comparison', fontsize=14, fontweight='bold')
+                ax2.axvline(x=0.3, color='orange', linestyle='--', alpha=0.5, label='High Overlap Threshold')
+                ax2.legend()
+                ax2.grid(True, alpha=0.3, axis='x')
+                
+                # Add value labels
+                for i, (bar, val) in enumerate(zip(bars2, t1_values)):
+                    ax2.text(val + 0.01, bar.get_y() + bar.get_height()/2, 
+                            f'{val:.4f}', va='center', fontsize=9)
+                
+                plt.tight_layout()
+                st.pyplot(fig)
+                plt.close()
+                
+                # Per-class breakdown if enabled
+                if complexity_by_class:
+                    st.markdown("**Additional Complexity Measures**")
+                    
+                    # Show additional measures if available
+                    additional_measures = []
+                    for name in ['Original'] + list(st.session_state.resampled_data.keys()):
+                        if name == 'Original':
+                            results = orig_results
+                        elif name in st.session_state.complexity_results:
+                            comp_results = st.session_state.complexity_results[name]
+                            results = comp_results.get('post_processing', comp_results)
+                        else:
+                            continue
+                        
+                        measure_data = {'Technique': name}
+                        
+                        # Add available measures
+                        for measure in ['n1', 'f1', 'n2', 'si']:
+                            if measure in results:
+                                val = results[measure]
+                                # Handle array results by taking the mean
+                                if isinstance(val, (list, np.ndarray)):
+                                    val = np.mean(val) if len(val) > 0 else 0.0
+                                measure_data[measure.upper()] = f"{val:.4f}"
+                        
+                        if len(measure_data) > 1:  # More than just technique name
+                            additional_measures.append(measure_data)
+                    
+                    if additional_measures:
+                        st.dataframe(pd.DataFrame(additional_measures), use_container_width=True)
+                    else:
+                        st.info("Additional measures not available. Check complexity.py file.")
 
 # ============================================================================
 # SECTION 4: MODEL EVALUATION

@@ -13,8 +13,13 @@ from .kmeans_undersampling import (
     RKMUndersampling, FRKMUndersampling
 )
 from .osm import OSM
+from .urns import URNS
+from .nus import NUS
 from .random_oversampler import RandomOverSampler
 from .random_undersampler import RandomUnderSampler
+from .devi_ocsvm import DeviOCSVM
+from .fcm_boost_obu import FCMBoostOBU
+from .odbot import ODBOT
 
 __all__ = [
     'BaseSampler',
@@ -32,6 +37,11 @@ __all__ = [
     'RKMUndersampling',
     'FRKMUndersampling',
     'OSM',
+    'URNS',
+    'NUS',
     'RandomOverSampler',
-    'RandomUnderSampler'
+    'RandomUnderSampler',
+    'DeviOCSVM',
+    'FCMBoostOBU',
+    'ODBOT'
 ]
